@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Training artifacts
+qwen2.5-coder-pep750/
+results/
+unsloth_compiled_cache/
