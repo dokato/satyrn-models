@@ -26,14 +26,29 @@ pivoted twice; it is worth reading for reference, not for reuse.
 ### The base model has no latent t-string knowledge
 
 Qwen2.5-Coder-7B scores **0/11** on a held-out benchmark, both zero-shot and
-with PEP 750 documentation in context. The failure reason is uniform across the
-with-docs condition: `no t-string literal (ast.TemplateStr) found` — the model
-produced syntactically valid Python every time and never once reached for
-t-string syntax, even with the API described in the prompt.
+with PEP 750 documentation in context. Of the 10 with-docs tasks that *require*
+a template, all 10 failed with the same reason —
+`no t-string literal (ast.TemplateStr) found` — producing syntactically valid
+Python every time while never reaching for t-string syntax, even with the API in
+the prompt. (The 11th is a negative-control task where a t-string is the wrong
+answer; it failed on an assertion, not the surface check.)
 
 This makes it a **clean substrate**: results attributable to training, not to
 pretraining contamination. (Chosen deliberately for that property; a base that
 already half-knew t-strings would confound whether the machinery works.)
+
+> ⚠️ **The with-docs arm is a deliberately weak representative of retrieval, and
+> this was never resolved.** Gate 1 flagged it explicitly: an 8-line
+> comment-style API summary, fed to a *base* (non-instruct) model, single greedy
+> sample, no worked example. A serious docs-in-context contender would be the
+> instruct variant with a real PEP 750 excerpt and at least one worked example,
+> or few-shot prompting.
+>
+> Consequence for the rebuild: **`base + docs = 0%` supports "this base model
+> does not know t-strings." It does not support "retrieval loses."** Any eventual
+> "fine-tuning beats retrieval" verdict is scoped to *this specific weak arm*
+> unless the arm is strengthened first. Gate 1 left that decision to the owner
+> and it was never made — it is still open. See §6.
 
 Secondary observation from retained completions: on bare comment prompts the
 base model frequently generates *prose* (StackOverflow-question-style English)
@@ -44,13 +59,20 @@ having no idea what to do.
 ### The verify → train → evaluate loop closes end to end
 
 The most important positive result. On its **own training prompts**, a LoRA
-fine-tune on 24 examples emits correct t-strings **4 of 5** (the fifth correctly
-uses the `Interpolation(...)` constructor, which is what that example teaches).
-The base model emitted **zero** t-strings across 22 baseline generations.
+fine-tune emits correct t-strings in **4 of 5 sampled prompts** (the fifth
+correctly uses the `Interpolation(...)` constructor, which is what that example
+teaches). The base model emitted **zero** t-strings across 22 baseline
+generations.
 
 This separates *"the pipeline is broken"* (ruled out) from *"the corpus is too
 small"* (confirmed). Everything downstream of data generation is a known
 quantity.
+
+Precision notes: the corpus is 24 examples, of which **20 were training rows**
+(4 were split off for validation), and the memorization probe sampled **5 of
+those 20**. "Memorization" is therefore well-evidenced but not measured
+exhaustively — the rebuild should run the check over all training rows and
+retain completions, which the committed `memorization_check` module supports.
 
 ### n=24 produces zero generalization
 
@@ -81,45 +103,47 @@ gap-filler.
 
 ## 2. The central finding: a bug class that defeats ordinary testing
 
-**One failure class produced four separate incidents.** This is the spike's most
-transferable output.
+**Three distinct defects, one of which recurred after being "fixed."** All share
+one shape: **wrong, but passes its own test.**
 
-| # | Variant | Caught by |
+| # | Defect | Caught by |
 |---|---|---|
-| 1 | Dependency inliner resolved the wrong module's same-named symbol — code ran, test passed, behaviour was wrong | Adversarial review |
-| 2 | Hidden tests asserted two *candidate-produced* values against each other, encoding no expected value | Manual inspection of output |
-| 3 | A zero-work degenerate candidate passed a real example | Manual adversarial probe |
-| 4 | The anti-vacuity gate was structurally blind: its degenerate carried no t-string, so the oracle rejected it on a surface check *before the hidden test ran* — a hidden test of literally `assert True` passed every gate | Final review gate |
+| 1 | Dependency inliner resolved the wrong module's same-named symbol — code ran, its test passed, behaviour was wrong. **Recurred** after a fix round: the specific repro was closed while the underlying class survived in three other code paths | Adversarial review, twice |
+| 2 | Hidden tests asserted two *candidate-produced* values against each other, encoding no expected value at all. Proven exploitable: a zero-work candidate passed | Manual inspection, then an adversarial probe built to confirm it |
+| 3 | The anti-vacuity gate built to stop #2 was itself structurally blind — its degenerate candidate carried no t-string, so the oracle rejected it on a surface check *before the hidden test ran*. A hidden test of literally `assert True` passed every gate | Final review gate |
 
-All four share one shape: **wrong, but passes its own test.** None were caught by
-the test suite. Every one required someone actively trying to break it. Variant
-#4 appeared *inside the gate built to stop #3*, despite the team being actively
-vigilant about exactly this class.
+None were caught by the test suite. Every one required someone actively trying
+to break it. Defect #3 appeared *inside the gate built to stop #2*, despite
+active vigilance about exactly this class — and the real corpus turned out clean
+only because a **stronger adversary had been run by hand than the committed code
+enforced.** That gap between "verified once manually" and "enforced
+structurally" is the recurring theme.
 
-### The design rule this yields
+### The design rule this yields — stated narrowly
 
-**Making a bad state unrepresentable beats gating it.**
+**Make the bad state unrepresentable where you can. Where only a gate is
+possible, the gate itself needs an adversarial test.**
 
-The fixes that held were deletions and structural invariants:
+The stronger half is evidenced: deleting cross-module inlining outright (rather
+than fixing its resolution logic) made defect #1 impossible to express, and
+requiring expected values to live in the hidden test — never in the reference
+solution the model produces — made #2 impossible.
 
-- deleting cross-module inlining entirely, rather than fixing its resolution
-  logic (variant #1 became impossible to express)
-- requiring expected values to live in the hidden test, never in the reference
-  solution the model produces (variant #2 became impossible)
-- requiring a degenerate candidate's failure to *originate in the hidden test*,
-  so a surface-check rejection cannot be mistaken for a discriminating test
-  (variant #4)
-
-The fixes that leaked were checks bolted onto designs that still permitted the
-bad state.
+⚠️ **Do not over-rotate against gates.** The fix for #3 is itself *a better
+gate* (degenerates must carry a dummy t-string so they reach the hidden test;
+their failure must originate there), not a structural impossibility — anti-vacuity
+is inherently a gate, because it is a claim about a test's discriminating power.
+And it is **untested in anger**: the spike ended immediately after that commit.
+The evidence supports "gates are where this bug class re-hosts, so gates need
+their own adversarial tests," not "gates are bad."
 
 ### Implication for the real build
 
 Start from the threat model, not from a feature list. The spike's gates accreted
-one per discovered bug; a proper design should begin from *"generated examples
+one per discovered defect; a proper design should begin from *"generated examples
 can be confidently wrong in ways review does not catch"* and work backward, with
 adversarial verification as a **structural, first-class requirement** rather than
-a review activity.
+a review activity — including adversarial tests aimed at the gates themselves.
 
 Budget for it explicitly. Every incident above cost a review round; two cost an
 architectural pivot.
@@ -162,9 +186,10 @@ Recorded because the root causes are more useful than the incidents.
 
 ### The tdom category error (cost: most of a build cycle)
 
-The research doc ranked a third-party library (`tdom`, an HTML templating
-library built on t-strings) as "the highest-value corpus available," and an
-entire harvest architecture was built around it. Two things were wrong:
+**This was the spike author's own design error**, not something inherited. The
+research doc ranked a third-party library (`tdom`, an HTML templating library
+built on t-strings) as "the highest-value corpus available," and an entire
+harvest architecture was built around that ranking. Two things were wrong:
 
 1. **Category error.** The goal is teaching a *language feature* and the
    `string.templatelib` stdlib API. Training on a library teaches that library's
@@ -199,6 +224,19 @@ dimension that mattered. Check the axis, not the headline.
 One task required two fix rounds, an architectural pivot, and was then deleted
 entirely. That boundary was drawn around the wrong unit of work.
 
+### Delegated long-running work was abandoned twice
+
+On two occasions a delegated implementer launched a long foreground run (model
+load plus generation), then backgrounded it and ended its turn expecting an
+async completion notification that does not exist for subagents. The work itself
+was fine; it was simply left unfinished and unreported, and had to be recovered
+by checking the OS process directly.
+
+**The rebuild will dispatch identical long runs** (training, evaluation,
+gate sweeps that invoke the real oracle per example). Any delegation of those
+must state explicitly: *this call blocks your turn; wait for it to return before
+reporting.* Cheap to say, and it cost two recovery cycles to learn.
+
 ---
 
 ## 5. Carry forward / redo
@@ -218,7 +256,6 @@ entirely. That boundary was drawn around the wrong unit of work.
 - Contamination gate that **raises rather than warns**, dual-axis (prompt and
   normalized code, separate thresholds — a single shared threshold provably
   closes nothing)
-- Frozen benchmark: baselines are attached to it; changing it invalidates them
 - Mandatory provenance on every row; machine-enforced source pinning
 - A memorization check (train-prompt regurgitation rate) as a standard
   post-training step — it is what distinguishes a broken pipeline from a small
@@ -229,6 +266,15 @@ entirely. That boundary was drawn around the wrong unit of work.
 - Design from the threat model in §2, rather than accreting gates per incident
 - Validate source suitability empirically before building extraction for it
 - Smaller task units around verification-heavy work
+
+**Expired — do NOT carry:**
+
+- *"The benchmark is frozen because baselines are attached to it."* Correct
+  discipline mid-spike; obsolete now. The attached baselines are two 0% numbers
+  that a rerun reproduces exactly (greedy decoding) in a few minutes of compute.
+  Freezing an 11-task benchmark that Gate 1 called too thin, to protect
+  baselines that cost minutes to re-measure, is a bad trade. **Redesigning the
+  benchmark and re-running baselines should be on the table** — see §6.
 
 ---
 
@@ -245,13 +291,34 @@ entirely. That boundary was drawn around the wrong unit of work.
    FIM-versus-chat decision was deferred and is now due. Note the spike used a
    naive `prompt + solution` concatenation with **no prompt-token loss masking** —
    acceptable for a smoke test, a real decision at scale.
-4. **Contamination thresholds do not transfer.** The 0.70 code-axis threshold was
-   derived from an 11×24 distribution and must be re-derived at scale.
-   `difflib`-based pairwise comparison is O(n²) and will not survive "low
-   thousands."
+4. **Contamination: thresholds don't transfer, and one blind spot is
+   fundamental.** The 0.70 code-axis threshold was derived from an 11×24
+   distribution and must be re-derived at scale. Two further points the spike
+   established:
+   - **Intra-corpus deduplication does not exist.** The gate compares
+     benchmark × corpus only, which is *linear* in corpus size (the benchmark is
+     fixed) — so that direction scales fine. Near-duplicate detection *within* a
+     generated corpus is the genuinely missing piece, it is O(n²), and the
+     corpus brief's correlation warning makes it necessary.
+   - **Some real duplication is uncatchable by text similarity.** A known pair
+     (`bench-sql-params` vs a quarantined example) is semantically duplicated
+     but scores 0.267 on code and 0.566 on prompt — no threshold catches it
+     without flooding false positives. The gate's authors trusted it less than
+     a newcomer might; don't mistake "gate passes" for "no contamination."
 5. **Does the base model choice still hold?** It was chosen partly to prove the
    machinery on a clean substrate. With the machinery proven, is a
    later-cutoff base now preferable, or does that reintroduce confounds?
+6. **How strong should the retrieval arm be, and what may the §3.2 gate claim?**
+   The spike's with-docs arm is weak by construction (see §1's warning). Decide
+   before the rebuild adjudicates anything: strengthen it (instruct model, real
+   PEP excerpt, worked example, few-shot) so a fine-tuning-vs-retrieval verdict
+   is fair, or narrow what the gate is permitted to conclude. Gate 1 raised this
+   and it was never decided.
+7. **What benchmark size and composition can actually discriminate that gate?**
+   At n=11, 0/11 carries a ~25% upper confidence bound (rule of three) — thin
+   enough that a later "0% → 27%" improvement sits at the edge of meaningful.
+   Benchmark redesign is cheap (baselines re-measure in minutes) and should be
+   decided deliberately rather than inherited.
 
 ---
 
