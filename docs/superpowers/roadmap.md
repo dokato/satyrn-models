@@ -99,7 +99,58 @@ gate evaluated with its verdict recorded — including if retrieval wins.
 
 ## Planned
 
+### SP5: Seed-and-Pattern Corpus Authoring
+
+**Promoted ahead of SP3 — this is now the primary corpus source, not a
+gap-filler.** Full brief:
+[seed-and-pattern corpus authoring](research/2026-07-31-corpus-authoring-brief.md)
+— **required pre-reading for this sub-project's brainstorm.**
+
+Two facts forced this. **Third-party sources are ruled out**: examples must
+teach the PEP 750 language feature and the `string.templatelib` stdlib API, not
+a library's API surface, so a corpus built on `tdom` would bind the model's
+notion of t-strings to one niche library. And **what remains is tiny** —
+CPython's `test_templatelib.py` is 193 lines / 13 test methods, plus a few dozen
+PEP 750 examples. That is 1–2 orders of magnitude below the "low thousands"
+target, so harvest cannot be the primary source and SP3's framing (synthesis
+gated on harvest proving insufficient) is superseded.
+
+The design inverts the human's role: **source, not gate.** Review effort scales
+with output volume; seeding effort scales with diversity needed, and each seed
+multiplies. Ground truth comes from *executing* real templates, never from a
+model — which is what makes a large auto-accept path safe, and is the structural
+fix for the vacuous-hidden-test defect found in the spike. The method has
+published precedent in
+[Template-Based Data Generation](https://arxiv.org/abs/2411.18104).
+
+| Rung | Summary | State |
+|------|---------|-------|
+| R1 | **Seed extraction.** Pull real t-string *literals* out of real code — including third-party sources, whose literals are pure stdlib artifacts even though their surrounding assertions are not ("de-libraryization"). Record provenance per seed. Output is seeds only; no third-party import ever reaches the corpus. | Planned |
+| R2 | **Seed authoring + gap analysis.** Owner hand-authors seeds covering shapes extraction missed. Self-Instruct's 100–200 seeds is the calibration point. Seed *diversity* is the target, not count — see the correlation risk in the brief. | Planned |
+| R3 | **Pattern proposal + one-time approval.** LLM proposes parameterized exercise kinds; owner approves each once. Review is per-pattern (dozens), not per-example (hundreds). Favour patterns that **compose or transform** seeds over pure introspection, to break output correlation. | Planned |
+| R4 | **Deterministic cross-product with executed ground truth.** Apply approved patterns across seeds; compute every expected value by running the template on the pinned interpreter. Route all output through the existing oracle contract plus the self-verification, on-target, and anti-vacuity gates. | Planned |
+| R5 | **Adjudication surface.** Owner sees only the uncertain middle: verified-but-degenerate, near-duplicate, low-confidence. Everything cleanly verified auto-accepts; everything cleanly failing auto-rejects with a reason. | Planned |
+| R6 | **Scale sweep on effective diversity.** 500 → 2k → 5k against the fixed benchmark, measuring *effective* diversity rather than row count, so the correlation risk is observable rather than theoretical. Absorbs SP3 R4. | Planned |
+
+**Done condition:** a corpus of verified, provenance-tagged, stdlib-only
+examples at a scale the harvest path cannot reach, every expected value derived
+by execution, produced with the owner's time spent on seeds and pattern
+approval rather than per-example review — and the scale/diversity curve
+recorded.
+
+**Prerequisite:** the contamination gate's known code-similarity blind spot
+(it compares prompt text only) must be closed before this corpus trains
+anything.
+
 ### SP3: Targeted Synthesis
+
+> **Largely superseded by SP5 (2026-07-31).** SP3 assumed synthesis would be a
+> gap-filler after a large harvest; harvest cannot reach scale under
+> stdlib-only sourcing, so SP5 owns primary corpus generation. R3 (contrastive
+> old→new pairs) and R4 (scale sweep) are absorbed into SP5 R3/R6. What may
+> still survive as distinct: R1's gap analysis, run *against* an SP5 corpus
+> rather than a harvested one. Resolve during SP5's brainstorm — open question
+> 5 in the [brief](research/2026-07-31-corpus-authoring-brief.md).
 
 **Gated on SP2 R4 showing measured gaps.** Does not start merely because
 harvesting finished. If the harvested corpus already clears the baseline gate,
