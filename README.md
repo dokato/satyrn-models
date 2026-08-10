@@ -18,7 +18,7 @@ split between `tstrings-rebuild` for provider infrastructure and
 Success means learning the workflow, recording decisions and false directions,
 and producing trustworthy evidence about the training approach. A negative
 result is still a successful result. When this phase ends, we will rebuild the
-SDD and restart the project at [`satyrn-ai`](https://github.com/satyrn-ai).
+SDD (Spec-Driven Development) and restart the project at [`satyrn-ai`](https://github.com/satyrn-ai).
 
 ## Start here
 
