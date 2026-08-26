@@ -17,7 +17,7 @@ SANDBOX_RUN_IDENTIFIER = uuid4().hex
 
 def get_predecessor_python_version(python_version: str) -> str:
     """Return the Python feature release immediately before python_version."""
-    major, minor = python_version.split(".")
+    major, minor, *_ = python_version.split(".")
     return f"{major}.{int(minor) - 1}"
 
 
