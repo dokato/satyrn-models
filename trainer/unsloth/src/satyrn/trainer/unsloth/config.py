@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
 
-StageName = Literal["cpt", "sft", "rl"]
+StageName = Literal["pre", "cpt", "sft", "rl"]
 
 OmegaConf.register_resolver("mul", operator.mul)
 OmegaConf.register_resolver("max", lambda *values: max(values))
@@ -28,9 +28,7 @@ class ExperimentConfig(BaseModel):
     model: ModelConfig
     mlflow: MlflowConfig
 
-    eval_batch_size: int
     eval_ratio: float
-    eval_steps: int
     load_in_4bit: bool
     logging_steps: int
     max_seq_length: int
@@ -55,11 +53,20 @@ class PeftConfig(BaseModel):
     finetune_audio_layers: bool
 
 
+class TemplateConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction_part: str
+    response_part: str
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    enable_thinking: bool
     peft: PeftConfig
+    template: TemplateConfig
 
 
 class MlflowConfig(BaseModel):
@@ -84,6 +91,8 @@ class CptStageConfig(BaseModel):
     prepack_dataset: bool
     seq_len: int
     batch_size: int
+    eval_batch_size: int
+    eval_steps: int
     gradient_accumulation_steps: int
     num_train_epochs: int
     learning_rate: float
@@ -94,6 +103,8 @@ class SftStageConfig(BaseModel):
 
     seq_len: int
     batch_size: int
+    eval_batch_size: int
+    eval_steps: int
     gradient_accumulation_steps: int
     num_train_epochs: int
     learning_rate: float
