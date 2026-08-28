@@ -3,12 +3,18 @@ max_seq_length: ${max:${cpt.seq_len},${sft.seq_len}} # ceiling for the model loa
 
 optim: paged_adamw_8bit
 logging_steps: 2
-eval_steps: 3
-eval_batch_size: 4
 eval_ratio: 0.1
 max_steps: -1 # positive values cut a run short, overriding num_train_epochs
 
 model:
+
+  # Render the dataset's reasoning trace into the assistant turn's thinking channel
+  enable_thinking: false
+
+  # Turn headers the model's chat template emits. Training starts after response_part.
+  template:
+    instruction_part: null
+    response_part: null
 
   peft:
     # r - must be explicitly set by model or experiment config
@@ -38,13 +44,17 @@ cpt:
   prepack_dataset: false
   seq_len: 4096
   batch_size: 8
+  eval_batch_size: 4
+  eval_steps: 3
   gradient_accumulation_steps: 1
   num_train_epochs: 1
   learning_rate: 1e-4
 
 sft:
-  seq_len: 1280
+  seq_len: 2048
   batch_size: 8
+  eval_batch_size: 4
+  eval_steps: 3
   gradient_accumulation_steps: 1
   num_train_epochs: 1
   learning_rate: 2e-4
