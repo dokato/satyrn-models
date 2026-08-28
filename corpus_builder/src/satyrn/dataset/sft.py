@@ -2,14 +2,22 @@
 
 import json
 import logging
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
 
 import click
 from tqdm import tqdm
 
+from satyrn.dataset.generation import (
+    PYTHON_CODE_RULES,
+    SYSTEM_PROMPT,
+    Idea,
+    append_dataset_line,
+    collect_input_docs,
+    generate_ideas,
+    output_file_lock,
+    prepare_output_file,
+)
 from satyrn.dataset.llm.context import Context
 from satyrn.dataset.llm.models import Model, get_llm
 from satyrn.dataset.utils.concurrency import split_workers
@@ -18,59 +26,10 @@ from satyrn.dataset.utils.sandbox import Sandbox, get_predecessor_python_version
 
 logger = logging.getLogger(__name__)
 
-output_file_lock = threading.Lock()
+RULES = PYTHON_CODE_RULES
 
-SYSTEM_PROMPT = "You are an expert Python instructor writing teaching material for the newest Python release."
-
-RULES = """
-- The code must be Python source, not a shell command or CLI invocation.
-- Use Python API calls (e.g. call a module's functions directly instead of `python -m module ...`).
-- The code must run non-interactively to completion without requiring a real terminal.
-- The code must terminate within a few seconds; no infinite loops or blocking waits.
-- Only write Python code. Skip anything that cannot be expressed as a Python code example,
-  such as C API changes, shell commands and CLI invocations, build configuration, etc.
-"""
-
-
-@dataclass
-class Idea:
-    """A single code-block idea proposed for a Python documentation change."""
-
-    doc_path: Path
-    description: str
-    python_version: str
-
-
-def generate_ideas(model: Model, doc_path: Path, python_version: str) -> list[Idea]:
-    """Return code-block ideas an LLM proposes for the features described in doc_path."""
-    prompt = f"""
-The attached document describes a change in Python version {python_version}. Describe between 0 and 50
-ideas for short, self-contained code blocks that would demonstrate the described features.
-
-- Each idea is a short description of what the code block would show.
-- Propose fewer ideas if the document only covers a small change.
-- Do not repeat the same idea.
-- DO NOT propose ideas for parts of the document that cannot be demonstrated in Python, such as
-  C API changes, shell commands and CLI invocations, or build configuration.
-
-{RULES}
-    """
-    schema = {
-        "type": "object",
-        "properties": {
-            "ideas": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-        },
-        "required": ["ideas"],
-    }
-    context = Context()
-    context.system_prompt = SYSTEM_PROMPT
-    context.add(doc_path.name, doc_path)
-    context.set_json_schema(schema)
-    response = model.generate(prompt, context, thinking=True)
-    return [Idea(doc_path, description, python_version) for description in response["ideas"]]
+# Backwards-compatible name retained for callers of the original SFT module.
+write_dataset_line = append_dataset_line
 
 
 def generate_code_block(model: Model, idea: Idea, sandbox: Sandbox, predecessor_sandbox: Sandbox) -> dict:
@@ -378,12 +337,6 @@ def build_dataset_line(model: Model, idea: Idea, sandbox: Sandbox, predecessor_s
     }
 
 
-def write_dataset_line(dataset_line: dict, output_path: Path) -> None:
-    """Append dataset_line to output_path as one JSON line."""
-    with output_file_lock, output_path.open("a") as fh:
-        fh.write(json.dumps(dataset_line) + "\n")
-
-
 @click.command("sft")
 @click.option(
     "-i",
@@ -411,15 +364,8 @@ def main(input_path: Path, output_path: Path, python_version: str, preview: bool
     predecessor_sandbox = Sandbox(get_predecessor_python_version(python_version))
     file_workers, idea_workers = split_workers(workers)
 
-    # Prepare output file
-    if output_path.suffix != ".jsonl":
-        raise click.BadParameter("Output file must end with .jsonl")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists() and click.confirm(f"{output_path} already exists. Clear it?"):
-        output_path.unlink()
-
-    # Collect input docs
-    input_docs = [input_path] if input_path.is_file() else sorted(input_path.rglob("*.rst"))
+    prepare_output_file(output_path)
+    input_docs = collect_input_docs(input_path)
 
     def process_doc(doc_path: Path) -> None:
         """Generate and write every dataset line for one doc file."""
