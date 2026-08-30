@@ -75,7 +75,8 @@ def evaluate_solution(solution: str, test_cases: list[dict], sandbox: Sandbox) -
     for test_case in test_cases:
         program = f"{solution.rstrip()}\n\n{test_case['test_code'].rstrip()}\n\nprint({PASS_MARKER!r})\n"
         output = sandbox.run(program)
-        results.append(TestResult(test_case["name"], output.strip() == PASS_MARKER, output))
+        marker_is_last_line = output.rstrip().splitlines()[-1:] == [PASS_MARKER]
+        results.append(TestResult(test_case["name"], marker_is_last_line, output))
 
     passed_count = sum(result.passed for result in results)
     return EvaluationResult(passed_count / len(results), results)

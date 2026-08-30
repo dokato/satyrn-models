@@ -41,7 +41,7 @@ TEST_CASES = [
 
 
 def test_evaluate_solution_returns_fraction_of_independent_tests() -> None:
-    sandbox = StubSandbox("3.15", [f"{PASS_MARKER}\n", "AssertionError\n"])
+    sandbox = StubSandbox("3.15", [f"warning\nstray output\n{PASS_MARKER}\n", "AssertionError\n"])
 
     result = evaluate_solution("def solve(value): return value * 2", TEST_CASES, sandbox)
 
@@ -49,6 +49,15 @@ def test_evaluate_solution_returns_fraction_of_independent_tests() -> None:
     assert [test.passed for test in result.tests] == [True, False]
     assert len(sandbox.programs) == 2
     assert all("def solve" in program for program in sandbox.programs)
+
+
+def test_evaluate_solution_requires_marker_to_be_last_line() -> None:
+    sandbox = StubSandbox("3.15", [f"{PASS_MARKER}\nerror after marker\n", PASS_MARKER])
+
+    result = evaluate_solution("def solve(value): return value * 2", TEST_CASES, sandbox)
+
+    assert result.score == 0.5
+    assert [test.passed for test in result.tests] == [False, True]
 
 
 def test_evaluate_solution_requires_tests() -> None:
