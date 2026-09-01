@@ -8,6 +8,7 @@ Key exports:
 """
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,12 @@ class Idea:
     doc_path: Path
     description: str
     python_version: str
+
+
+def _pep_identifier(doc_path: Path) -> str | None:
+    """Return a normalized PEP identifier when doc_path names a PEP document."""
+    match = re.search(r"\bpep[-_ ]?(\d+)\b", doc_path.stem, re.IGNORECASE)
+    return f"PEP {int(match.group(1))}" if match else None
 
 
 def generate_ideas(model: Model, doc_path: Path, python_version: str) -> list[Idea]:

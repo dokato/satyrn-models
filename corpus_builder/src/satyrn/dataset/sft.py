@@ -8,7 +8,10 @@ from pathlib import Path
 import click
 from tqdm import tqdm
 
-from satyrn.dataset.generation import (
+from satyrn.dataset.llm.context import Context
+from satyrn.dataset.llm.models import Model, get_llm
+from satyrn.dataset.utils.concurrency import split_workers
+from satyrn.dataset.utils.generation import (
     PYTHON_CODE_RULES,
     SYSTEM_PROMPT,
     Idea,
@@ -18,9 +21,6 @@ from satyrn.dataset.generation import (
     output_file_lock,
     prepare_output_file,
 )
-from satyrn.dataset.llm.context import Context
-from satyrn.dataset.llm.models import Model, get_llm
-from satyrn.dataset.utils.concurrency import split_workers
 from satyrn.dataset.utils.preview import print_dataset_line, print_ideas
 from satyrn.dataset.utils.sandbox import Sandbox, get_predecessor_python_version, remove_leftover_containers
 

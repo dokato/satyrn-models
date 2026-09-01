@@ -1,34 +1,29 @@
-"""Generate testable Python evaluation and Reinforcement Learning datasets.
-
-Key exports:
-    - evaluate_solution() - Run independent tests and calculate a score from 0 to 1.
-    - verify_problem() - Verify a reference solution on target and predecessor Python.
-    - build_dataset_line() - Generate and verify one testable dataset row.
-"""
+"""Generate testable Python evaluation and Reinforcement Learning datasets."""
 
 import json
 import logging
-import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Self
 
 import click
 from tqdm import tqdm
 
-from satyrn.dataset.generation import (
+from satyrn.dataset.llm.context import Context
+from satyrn.dataset.llm.models import Model, get_llm
+from satyrn.dataset.utils.concurrency import split_workers
+from satyrn.dataset.utils.generation import (
     PYTHON_CODE_RULES,
     SYSTEM_PROMPT,
     Idea,
+    _pep_identifier,
     append_dataset_line,
     collect_input_docs,
     generate_ideas,
     output_file_lock,
     prepare_output_file,
 )
-from satyrn.dataset.llm.context import Context
-from satyrn.dataset.llm.models import Model, get_llm
-from satyrn.dataset.utils.concurrency import split_workers
 from satyrn.dataset.utils.preview import print_dataset_line, print_ideas
 from satyrn.dataset.utils.sandbox import Sandbox, get_predecessor_python_version, remove_leftover_containers
 
@@ -37,6 +32,75 @@ logger = logging.getLogger(__name__)
 PASS_MARKER = "__SATYRN_TEST_PASSED__"
 MIN_TEST_CASES = 5
 MAX_TEST_CASES = 12
+
+PROBLEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "prompt": {"type": "string"},
+        "entry_point": {"type": "string"},
+        "solution": {"type": "string"},
+        "test_cases": {
+            "type": "array",
+            "minItems": MIN_TEST_CASES,
+            "maxItems": MAX_TEST_CASES,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "input": {"type": "string"},
+                    "expected_output": {"type": "string"},
+                    "test_code": {"type": "string"},
+                },
+                "required": ["name", "input", "expected_output", "test_code"],
+            },
+        },
+    },
+    "required": ["prompt", "entry_point", "solution", "test_cases"],
+}
+
+
+@dataclass(frozen=True)
+class TestCase:
+    """One independently executable test case for a generated problem."""
+
+    name: str
+    input: str
+    expected_output: str
+    test_code: str
+
+    @classmethod
+    def from_dict(cls, value: dict) -> Self:
+        """Construct a test case from the model's JSON-compatible response."""
+        return cls(
+            name=value["name"],
+            input=value["input"],
+            expected_output=value["expected_output"],
+            test_code=value["test_code"],
+        )
+
+
+@dataclass(frozen=True)
+class Problem:
+    """A generated programming problem and its reference solution."""
+
+    prompt: str
+    entry_point: str
+    solution: str
+    test_cases: list[TestCase]
+
+    @classmethod
+    def from_dict(cls, value: dict) -> Self:
+        """Construct a typed problem from the model's JSON-compatible response."""
+        return cls(
+            prompt=value["prompt"],
+            entry_point=value["entry_point"],
+            solution=value["solution"],
+            test_cases=[TestCase.from_dict(test_case) for test_case in value["test_cases"]],
+        )
+
+    def to_dict(self) -> dict:
+        """Return the problem in its JSON-compatible dataset representation."""
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -66,17 +130,17 @@ class VerificationResult:
     reason: str
 
 
-def evaluate_solution(solution: str, test_cases: list[dict], sandbox: Sandbox) -> EvaluationResult:
+def evaluate_solution(solution: str, test_cases: list[TestCase], sandbox: Sandbox) -> EvaluationResult:
     """Run each test independently and return passed/total as a score from 0 to 1."""
     if not test_cases:
         raise ValueError("At least one test case is required")
 
     results = []
     for test_case in test_cases:
-        program = f"{solution.rstrip()}\n\n{test_case['test_code'].rstrip()}\n\nprint({PASS_MARKER!r})\n"
+        program = f"{solution.rstrip()}\n\n{test_case.test_code.rstrip()}\n\nprint({PASS_MARKER!r})\n"
         output = sandbox.run(program)
         marker_is_last_line = output.rstrip().splitlines()[-1:] == [PASS_MARKER]
-        results.append(TestResult(test_case["name"], marker_is_last_line, output))
+        results.append(TestResult(test_case.name, marker_is_last_line, output))
 
     passed_count = sum(result.passed for result in results)
     return EvaluationResult(passed_count / len(results), results)
@@ -84,7 +148,7 @@ def evaluate_solution(solution: str, test_cases: list[dict], sandbox: Sandbox) -
 
 def verify_problem(
     solution: str,
-    test_cases: list[dict],
+    test_cases: list[TestCase],
     sandbox: Sandbox,
     predecessor_sandbox: Sandbox,
 ) -> VerificationResult:
@@ -100,61 +164,27 @@ def verify_problem(
     return VerificationResult(True, target, predecessor, "verified")
 
 
-def _problem_schema() -> dict:
-    """Return the JSON schema required from the problem-writing model."""
-    return {
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "entry_point": {"type": "string"},
-            "solution": {"type": "string"},
-            "test_cases": {
-                "type": "array",
-                "minItems": MIN_TEST_CASES,
-                "maxItems": MAX_TEST_CASES,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "input": {"type": "string"},
-                        "expected_output": {"type": "string"},
-                        "test_code": {"type": "string"},
-                    },
-                    "required": ["name", "input", "expected_output", "test_code"],
-                },
-            },
-        },
-        "required": ["prompt", "entry_point", "solution", "test_cases"],
-    }
-
-
-def _validate_problem_structure(problem: dict) -> None:
+def _validate_problem_structure(problem: Problem) -> None:
     """Reject vacuous, duplicated, or disconnected generated tests."""
-    test_cases = problem["test_cases"]
+    test_cases = problem.test_cases
     if not MIN_TEST_CASES <= len(test_cases) <= MAX_TEST_CASES:
         raise ValueError(f"Expected {MIN_TEST_CASES}-{MAX_TEST_CASES} test cases")
-    if problem["entry_point"] not in problem["prompt"]:
+    if problem.entry_point not in problem.prompt:
         raise ValueError("The prompt does not name the entry point")
 
-    names = [test_case["name"].strip() for test_case in test_cases]
+    names = [test_case.name.strip() for test_case in test_cases]
     if any(not name for name in names) or len(names) != len(set(names)):
         raise ValueError("Test case names must be non-empty and unique")
     for test_case in test_cases:
-        if not test_case["input"].strip() or not test_case["expected_output"].strip():
+        if not test_case.input.strip() or not test_case.expected_output.strip():
             raise ValueError("Every test needs a documented input and expected output")
-        if "assert" not in test_case["test_code"]:
-            raise ValueError(f"Test {test_case['name']!r} does not contain an assertion")
-        if problem["entry_point"] not in test_case["test_code"]:
-            raise ValueError(f"Test {test_case['name']!r} does not call the entry point")
+        if "assert" not in test_case.test_code:
+            raise ValueError(f"Test {test_case.name!r} does not contain an assertion")
+        if problem.entry_point not in test_case.test_code:
+            raise ValueError(f"Test {test_case.name!r} does not call the entry point")
 
 
-def _pep_identifier(doc_path: Path) -> str | None:
-    """Return a normalized PEP identifier when doc_path names a PEP document."""
-    match = re.search(r"\bpep[-_ ]?(\d+)\b", doc_path.stem, re.IGNORECASE)
-    return f"PEP {int(match.group(1))}" if match else None
-
-
-def judge_problem(model: Model, idea: Idea, problem: dict) -> dict:
+def judge_problem(model: Model, idea: Idea, problem: Problem) -> dict:
     """Return an LLM verdict on the task's fidelity, coverage, and test quality."""
     prompt = f"""
 The attached document describes a change in Python version {idea.python_version}. Review this
@@ -164,7 +194,7 @@ Idea:
 {idea.description}
 
 Task:
-{json.dumps(problem, indent=2)}
+{json.dumps(problem.to_dict(), indent=2)}
 
 Set `passed` to true only if all of these hold:
 
@@ -195,7 +225,7 @@ case or whose assertions could pass without exercising the entry point.
     return model.generate(prompt, context)
 
 
-def generate_problem(model: Model, idea: Idea, sandbox: Sandbox, predecessor_sandbox: Sandbox) -> dict:
+def generate_problem(model: Model, idea: Idea, sandbox: Sandbox, predecessor_sandbox: Sandbox) -> Problem:
     """Return a reference-solved problem with a verified, independently scored test suite."""
     prompt = f"""
 The attached document describes a change in Python version {idea.python_version}. Create a small
@@ -226,17 +256,20 @@ understanding of the new Python API rather than algorithmic difficulty.
     context = Context()
     context.system_prompt = SYSTEM_PROMPT
     context.add(idea.doc_path.name, idea.doc_path)
-    context.set_json_schema(_problem_schema())
+    context.set_json_schema(PROBLEM_SCHEMA)
 
     max_attempts = 3
     for attempt in range(max_attempts):
-        problem = model.generate(prompt, context, thinking=True)
+        generated_problem = model.generate(prompt, context, thinking=True)
+        if not isinstance(generated_problem, dict):
+            raise TypeError("Problem-writing model did not return a JSON object")
+        problem = Problem.from_dict(generated_problem)
         try:
             _validate_problem_structure(problem)
         except ValueError as error:
             verification_feedback = str(error)
         else:
-            verification = verify_problem(problem["solution"], problem["test_cases"], sandbox, predecessor_sandbox)
+            verification = verify_problem(problem.solution, problem.test_cases, sandbox, predecessor_sandbox)
             if verification.passed:
                 judgement = judge_problem(model, idea, problem)
                 if judgement["passed"]:
@@ -272,17 +305,18 @@ def build_dataset_line(model: Model, idea: Idea, sandbox: Sandbox, predecessor_s
         logger.error("Skipping idea: %s", error)
         return None
 
+    serialized_problem = problem.to_dict()
     return {
-        "prompt": problem["prompt"],
-        "test_cases": problem["test_cases"],
-        "solution": problem["solution"],
+        "prompt": problem.prompt,
+        "test_cases": serialized_problem["test_cases"],
+        "solution": problem.solution,
         "metadata": {
             "source_document": idea.doc_path.name,
             "pep": _pep_identifier(idea.doc_path),
             "python_version": idea.python_version,
             "idea": idea.description,
-            "entry_point": problem["entry_point"],
-            "test_count": len(problem["test_cases"]),
+            "entry_point": problem.entry_point,
+            "test_count": len(problem.test_cases),
         },
     }
 
