@@ -33,31 +33,6 @@ PASS_MARKER = "__SATYRN_TEST_PASSED__"
 MIN_TEST_CASES = 5
 MAX_TEST_CASES = 12
 
-PROBLEM_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "prompt": {"type": "string"},
-        "entry_point": {"type": "string"},
-        "solution": {"type": "string"},
-        "test_cases": {
-            "type": "array",
-            "minItems": MIN_TEST_CASES,
-            "maxItems": MAX_TEST_CASES,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "input": {"type": "string"},
-                    "expected_output": {"type": "string"},
-                    "test_code": {"type": "string"},
-                },
-                "required": ["name", "input", "expected_output", "test_code"],
-            },
-        },
-    },
-    "required": ["prompt", "entry_point", "solution", "test_cases"],
-}
-
 
 @dataclass(frozen=True)
 class TestCase:
@@ -101,6 +76,34 @@ class Problem:
     def to_dict(self) -> dict:
         """Return the problem in its JSON-compatible dataset representation."""
         return asdict(self)
+
+    @classmethod
+    def get_schema(cls) -> dict:
+        """Reuturn LLM response compatible schema."""
+        return {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "entry_point": {"type": "string"},
+                "solution": {"type": "string"},
+                "test_cases": {
+                    "type": "array",
+                    "minItems": MIN_TEST_CASES,
+                    "maxItems": MAX_TEST_CASES,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "input": {"type": "string"},
+                            "expected_output": {"type": "string"},
+                            "test_code": {"type": "string"},
+                        },
+                        "required": ["name", "input", "expected_output", "test_code"],
+                    },
+                },
+            },
+            "required": ["prompt", "entry_point", "solution", "test_cases"],
+        }
 
 
 @dataclass(frozen=True)
@@ -256,7 +259,7 @@ understanding of the new Python API rather than algorithmic difficulty.
     context = Context()
     context.system_prompt = SYSTEM_PROMPT
     context.add(idea.doc_path.name, idea.doc_path)
-    context.set_json_schema(PROBLEM_SCHEMA)
+    context.set_json_schema(Problem.get_schema())
 
     max_attempts = 3
     for attempt in range(max_attempts):
