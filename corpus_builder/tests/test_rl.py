@@ -13,7 +13,7 @@ from satyrn.dataset.rl import (
     verify_problem,
 )
 from satyrn.dataset.rl import TestCase as RLTestCase
-from satyrn.dataset.utils.generation import Idea, _pep_identifier
+from satyrn.dataset.utils.generation import Idea, pep_identifier
 
 
 @dataclass
