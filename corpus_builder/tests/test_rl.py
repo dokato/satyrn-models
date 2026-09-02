@@ -78,7 +78,7 @@ def test_evaluate_solution_requires_tests() -> None:
     [("PEP815.rst", "PEP 815"), ("pep-0750.txt", "PEP 750"), ("whatsnew.rst", None)],
 )
 def test_pep_identifier(filename: str, expected: str | None) -> None:
-    assert _pep_identifier(Path(filename)) == expected
+    assert pep_identifier(Path(filename)) == expected
 
 
 def test_build_dataset_line_includes_problem_and_source_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
