@@ -19,17 +19,13 @@ from satyrn.dataset.utils.generation import (
     collect_input_docs,
     generate_ideas,
     output_file_lock,
+    pep_identifier,
     prepare_output_file,
 )
 from satyrn.dataset.utils.preview import print_dataset_line, print_ideas
 from satyrn.dataset.utils.sandbox import Sandbox, get_predecessor_python_version, remove_leftover_containers
 
 logger = logging.getLogger(__name__)
-
-RULES = PYTHON_CODE_RULES
-
-# Backwards-compatible name retained for callers of the original SFT module.
-write_dataset_line = append_dataset_line
 
 
 def generate_code_block(model: Model, idea: Idea, sandbox: Sandbox, predecessor_sandbox: Sandbox) -> dict:
@@ -49,7 +45,7 @@ reader.
 
 In `expected_output` state exactly what running the code outputs, whether to stdout or stderr.
 
-{RULES}
+{PYTHON_CODE_RULES}
     """
     schema = {
         "type": "object",
@@ -149,7 +145,7 @@ Actual output:
 {actual_output}
 
 The code was required to follow these rules:
-{RULES}
+{PYTHON_CODE_RULES}
 
 Decide whether the code still correctly demonstrates the idea, and set `passed` to true only if all
 of these hold:
@@ -329,6 +325,7 @@ def build_dataset_line(model: Model, idea: Idea, sandbox: Sandbox, predecessor_s
         "prompt": [{"role": "user", "content": conversation["prompt"]}],
         "completion": [{"role": "assistant", "content": conversation["response"]}],
         "filename": idea.doc_path.name,
+        "pep": pep_identifier(idea.doc_path),
         "python_version": idea.python_version,
         "idea": idea.description,
         "code": code_block["code"],
@@ -382,7 +379,7 @@ def main(input_path: Path, output_path: Path, python_version: str, preview: bool
                 if dataset_line is None:
                     continue
 
-                write_dataset_line(dataset_line, output_path)
+                append_dataset_line(dataset_line, output_path)
                 if preview:
                     with output_file_lock:
                         print_dataset_line(dataset_line)
