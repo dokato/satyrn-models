@@ -17,11 +17,11 @@ from satyrn.dataset.utils.generation import (
     PYTHON_CODE_RULES,
     SYSTEM_PROMPT,
     Idea,
-    pep_identifier,
     append_dataset_line,
     collect_input_docs,
     generate_ideas,
     output_file_lock,
+    pep_identifier,
     prepare_output_file,
 )
 from satyrn.dataset.utils.preview import print_dataset_line, print_ideas
