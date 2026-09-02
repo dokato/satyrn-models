@@ -17,7 +17,7 @@ from satyrn.dataset.utils.generation import (
     PYTHON_CODE_RULES,
     SYSTEM_PROMPT,
     Idea,
-    _pep_identifier,
+    pep_identifier,
     append_dataset_line,
     collect_input_docs,
     generate_ideas,
