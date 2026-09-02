@@ -315,7 +315,7 @@ def build_dataset_line(model: Model, idea: Idea, sandbox: Sandbox, predecessor_s
         "solution": problem.solution,
         "metadata": {
             "source_document": idea.doc_path.name,
-            "pep": _pep_identifier(idea.doc_path),
+            "pep": pep_identifier(idea.doc_path),
             "python_version": idea.python_version,
             "idea": idea.description,
             "entry_point": problem.entry_point,
