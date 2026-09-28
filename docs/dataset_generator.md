@@ -109,6 +109,17 @@ Generating examples 24 at a time:
 satyrn-dataset sft -i datasets/python3.15/input/docs -o datasets/python3.15/sft.jsonl --python-version 3.15 --workers 24
 ```
 
+### Import NVIDIA OpenCodeReasoning
+
+`opencode-reasoning` streams every config and split from
+[`nvidia/OpenCodeReasoning`](https://huggingface.co/datasets/nvidia/OpenCodeReasoning) and writes one
+Satyrn SFT JSONL file per split. It maps `input` to the user prompt, separates a leading `<think>`
+block into `trace`, and stores the remaining answer as the assistant completion.
+
+`sample-opencode-reasoning` creates four deterministic, deduplicated, difficulty-balanced samples by
+default: `opencode_reasoning_split1.jsonl` through `opencode_reasoning_split4.jsonl`, with 2,000 rows
+per file.
+
 ### Generate evaluation and Reinforcement Learning datasets
 
 `rl` turns each demonstrable change in a PEP or Python documentation file into a small callable
