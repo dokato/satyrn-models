@@ -116,9 +116,7 @@ satyrn-dataset sft -i datasets/python3.15/input/docs -o datasets/python3.15/sft.
 Satyrn SFT JSONL file per split. It maps `input` to the user prompt, separates a leading `<think>`
 block into `trace`, and stores the remaining answer as the assistant completion.
 
-`sample-opencode-reasoning` creates four deterministic, deduplicated, difficulty-balanced samples by
-default: `opencode_reasoning_split1.jsonl` through `opencode_reasoning_split4.jsonl`, with 2,000 rows
-per file.
+We created four deterministic, deduplicated, difficulty-balanced samples in: `opencode_reasoning_split1.jsonl` through `opencode_reasoning_split4.jsonl`, with 2,000 rows per file.
 
 ### Generate evaluation and Reinforcement Learning datasets
 
