@@ -53,11 +53,17 @@ Pass the name of an experiment config to `satyrn-unsloth`.
 satyrn-unsloth --config-name experiment/pep750-qwen2.5-0.5b
 ```
 
-In experiment config `py3.15` you can swap the model with `model=`, naming any config in 
-`trainer/unsloth/configs/model`:
+Experiment config `py3.15` uses Ornith 1.5 9B by default. You can swap the model with `model=`,
+naming any config in `trainer/unsloth/configs/model`:
 
 ```sh
 satyrn-unsloth --config-name experiment/py3.15 model=qwen3.6-27b
+```
+
+Run the configured PEFT-rank sweep with Hydra multirun:
+
+```sh
+satyrn-unsloth --multirun --config-name experiment/py3.15
 ```
 
 Anything set in the experiment config can be overridden on the same line:

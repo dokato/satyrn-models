@@ -1,0 +1,15 @@
+# Architecture: dense Qwen3.5, 32 layers, 24 linear + 8 full attention
+# Thinking:     on by default
+# Multimodal:   text + vision
+# Requires transformers >=5.8.1; the published checkpoint uses 5.12.1.
+name: ornith-ai/Ornith-1.5-9B
+enable_thinking: true
+
+template:
+  instruction_part: "<|im_start|>user\n"
+  response_part: "<|im_start|>assistant\n"
+
+peft:
+  r: 6
+  lora_dropout: 0.0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "out_proj"]
