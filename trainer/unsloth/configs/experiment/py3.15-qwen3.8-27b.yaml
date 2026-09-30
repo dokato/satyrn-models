@@ -19,6 +19,11 @@ datasets:
     - datasets/python3.14/sft.jsonl
     - datasets/python3.14/sft-PEP750.jsonl
     - datasets/python3.15/sft.jsonl
+    - datasets/python3.15/sft2.jsonl
+    - datasets/opencode-reasoning/opencode_reasoning_split1.jsonl
+    - datasets/opencode-reasoning/opencode_reasoning_split2.jsonl
+    - datasets/opencode-reasoning/opencode_reasoning_split3.jsonl
+    - datasets/opencode-reasoning/opencode_reasoning_split4.jsonl
   rl:
     - datasets/python3.14/rl-PEP750.jsonl
 

@@ -18,7 +18,7 @@ model:
     response_part: null
 
   peft:
-    # r - must be explicitly set by model or experiment config
+    # r - set by the model config; multirun experiments may sweep this value
     lora_alpha: ${mul:${.r},2} # r * 2 by default
     lora_dropout: 0.0
     target_modules: null
@@ -70,5 +70,8 @@ rl:
   beta: 0.0 # KL penalty weight; values above 0 keep the policy closer to the reference model
 
 hydra:
+  sweeper:
+    params:
+      model.peft.r: "6,4,2"
   run:
     dir: results/${now:%Y%m%d-%H%M}-${run_name}
